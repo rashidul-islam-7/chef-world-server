@@ -18,6 +18,20 @@ app.get("/", (req, res) => {
   res.send("Chef World Server is Running!");
 });
 
+// const verifyToken = (req, res, next) => {
+//   const authHeader = req.headers.authorization;
+
+//   if (!authHeader || !authHeader.startsWith("Bearer")) {
+//     res.status(401).send({ msg: "Unauthorized" });
+//   }
+//   const token = authHeader.split(" ")[1];
+//   if (!token) {
+//     res.status(401).send({ msg: "Unauthorized" });
+//   }
+//   console.log(authHeader);
+//   next();
+// };
+
 const run = async () => {
   try {
     const db = client.db("chef-world");
@@ -109,6 +123,11 @@ const run = async () => {
             .status(404)
             .send({ success: false, message: "Recipe not found!" });
         }
+
+        // Delete featured reference
+        await featuredRecipesCollection.deleteOne({
+          recipeId: id,
+        });
       } catch (err) {
         res.status(500).send({ success: false, message: err.message });
       }
@@ -681,24 +700,88 @@ const run = async () => {
       }
     });
 
+    // app.get("/featured-recipes", async (req, res) => {
+    //   try {
+    //     const recipes = await featuredRecipesCollection
+    //       .aggregate([
+    //         {
+    //           $addFields: {
+    //             recipeObjectId: { $toObjectId: "$recipeId" },
+    //           },
+    //         },
+    //         {
+    //           $lookup: {
+    //             from: "all-recipe",
+    //             localField: "recipeObjectId",
+    //             foreignField: "_id",
+    //             as: "recipeDetails",
+    //           },
+    //         },
+    //         { $unwind: "$recipeDetails" },
+    //         {
+    //           $project: {
+    //             _id: "$recipeDetails._id",
+    //             recipeId: "$recipeId",
+    //             title: "$recipeDetails.title",
+    //             image: "$recipeDetails.image",
+    //             category: "$recipeDetails.category",
+    //             cuisine: "$recipeDetails.cuisine",
+    //             author: "$recipeDetails.author",
+    //             featuredAt: 1,
+    //           },
+    //         },
+    //         { $sort: { featuredAt: -1 } },
+    //       ])
+    //       .toArray();
+
+    //     res.send(recipes);
+    //   } catch (err) {
+    //     res.status(500).send({ message: err.message });
+    //   }
+    // });
+
     app.get("/featured-recipes", async (req, res) => {
+      console.time("featured-recipes");
+
       try {
         const recipes = await featuredRecipesCollection
           .aggregate([
+            // Latest featured recipes first
             {
-              $addFields: {
-                recipeObjectId: { $toObjectId: "$recipeId" },
+              $sort: {
+                featuredAt: -1,
               },
             },
+
+            // Only fetch 4 recipes
+            {
+              $limit: 4,
+            },
+
+            // Convert recipeId (string) to ObjectId
+            {
+              $addFields: {
+                recipeObjectId: {
+                  $toObjectId: "$recipeId",
+                },
+              },
+            },
+
+            // Join with all-recipe collection
             {
               $lookup: {
-                from: "all-recipe", // Fixed: DB collection name was "all-recipe"
+                from: "all-recipe",
                 localField: "recipeObjectId",
                 foreignField: "_id",
                 as: "recipeDetails",
               },
             },
-            { $unwind: "$recipeDetails" },
+
+            {
+              $unwind: "$recipeDetails",
+            },
+
+            // Return only required fields
             {
               $project: {
                 _id: "$recipeDetails._id",
@@ -711,16 +794,23 @@ const run = async () => {
                 featuredAt: 1,
               },
             },
-            { $sort: { featuredAt: -1 } },
           ])
           .toArray();
 
-        res.send(recipes);
-      } catch (err) {
-        res.status(500).send({ message: err.message });
+        console.timeEnd("featured-recipes");
+
+        res.status(200).json(recipes);
+      } catch (error) {
+        console.error("Featured Recipes Error:", error);
+        console.timeEnd("featured-recipes");
+
+        res.status(500).json({
+          success: false,
+          message: "Failed to fetch featured recipes.",
+          error: error.message,
+        });
       }
     });
-
     // Submit Report
     app.post("/reports", async (req, res) => {
       try {
@@ -917,8 +1007,6 @@ const run = async () => {
         res.status(500).send({ success: false, message: err.message });
       }
     });
-
-
   } catch (error) {
     console.error("Database Connection Error:", error);
   }
