@@ -161,23 +161,28 @@ const run = async () => {
     });
 
     // update recipe
-    app.patch("/update-recipe/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const updateRecipe = req.body;
+// Backend: update recipe
+app.patch("/update-recipe/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const updateRecipe = req.body;
 
-        if (!ObjectId.isValid(id)) {
-          return res.status(400).send({ message: "Invalid Recipe ID!" });
-        }
-        const result = await allRecipeCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updateRecipe },
-        );
-        res.send(result);
-      } catch (err) {
-        res.status(500).send({ message: err.message });
-      }
-    });
+    delete updateRecipe._id;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid Recipe ID!" });
+    }
+
+    const result = await allRecipeCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateRecipe }
+    );
+
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
 
     // premium user subscription api
     app.post("/premium-user-subscription", async (req, res) => {
@@ -316,6 +321,77 @@ const run = async () => {
       }
     });
 
+    // // like toggle
+    // app.put("/recipes/:id/like", async (req, res) => {
+    //   try {
+    //     const recipeId = req.params.id;
+    //     const { userId } = req.body;
+
+    //     if (!ObjectId.isValid(recipeId)) {
+    //       return res.status(400).json({ message: "Invalid Recipe ID!" });
+    //     }
+
+    //     if (!userId) {
+    //       return res.status(400).json({ message: "User ID is required" });
+    //     }
+
+    //     const existingLike = await likesCollection.findOne({
+    //       recipeId,
+    //       userId,
+    //     });
+
+    //     let updatedCountModifier = 1;
+    //     let isLikedNow = true;
+
+    //     if (existingLike) {
+    //       await likesCollection.deleteOne({ _id: existingLike._id });
+    //       updatedCountModifier = -1;
+    //       isLikedNow = false;
+    //     } else {
+    //       await likesCollection.insertOne({
+    //         recipeId,
+    //         userId,
+    //         createdAt: new Date(),
+    //       });
+    //     }
+
+    //     const updatedRecipe = await allRecipeCollection.findOneAndUpdate(
+    //       { _id: new ObjectId(recipeId) },
+    //       { $inc: { likesCount: updatedCountModifier } },
+    //       { returnDocument: "after" },
+    //     );
+
+    //     res.status(200).json({
+    //       success: true,
+    //       likesCount: updatedRecipe?.likesCount || 0,
+    //       isLiked: isLikedNow,
+    //     });
+    //   } catch (error) {
+    //     console.error(error);
+    //     res.status(500).json({ message: "Server Error" });
+    //   }
+    // });
+
+    // // like status
+    // app.get("/recipes/:id/like-status", async (req, res) => {
+    //   try {
+    //     const recipeId = req.params.id;
+    //     const { userId } = req.query;
+
+    //     if (!userId) {
+    //       return res.json({ isLiked: false });
+    //     }
+
+    //     const existingLike = await likesCollection.findOne({
+    //       recipeId,
+    //       userId,
+    //     });
+    //     res.json({ isLiked: !!existingLike });
+    //   } catch (error) {
+    //     res.json({ isLiked: false });
+    //   }
+    // });
+
     // like toggle
     app.put("/recipes/:id/like", async (req, res) => {
       try {
@@ -330,10 +406,12 @@ const run = async () => {
           return res.status(400).json({ message: "User ID is required" });
         }
 
-        const existingLike = await likesCollection.findOne({
-          recipeId,
-          userId,
-        });
+        const query = {
+          $or: [{ recipeId: recipeId }, { recipeId: new ObjectId(recipeId) }],
+          userId: userId,
+        };
+
+        const existingLike = await likesCollection.findOne(query);
 
         let updatedCountModifier = 1;
         let isLikedNow = true;
@@ -344,8 +422,8 @@ const run = async () => {
           isLikedNow = false;
         } else {
           await likesCollection.insertOne({
-            recipeId,
-            userId,
+            recipeId: recipeId,
+            userId: userId,
             createdAt: new Date(),
           });
         }
@@ -356,33 +434,36 @@ const run = async () => {
           { returnDocument: "after" },
         );
 
+        const currentCount = Math.max(0, updatedRecipe?.likesCount || 0);
+
         res.status(200).json({
           success: true,
-          likesCount: updatedRecipe?.likesCount || 0,
+          likesCount: currentCount,
           isLiked: isLikedNow,
         });
       } catch (error) {
-        console.error(error);
+        console.error("Error in toggle like:", error);
         res.status(500).json({ message: "Server Error" });
       }
     });
 
-    // like status
+    // 2. LIKE STATUS CHECK API
     app.get("/recipes/:id/like-status", async (req, res) => {
       try {
         const recipeId = req.params.id;
         const { userId } = req.query;
 
-        if (!userId) {
+        if (!userId || !recipeId || !ObjectId.isValid(recipeId)) {
           return res.json({ isLiked: false });
         }
-
         const existingLike = await likesCollection.findOne({
-          recipeId,
-          userId,
+          $or: [{ recipeId: recipeId }, { recipeId: new ObjectId(recipeId) }],
+          userId: userId,
         });
+
         res.json({ isLiked: !!existingLike });
       } catch (error) {
+        console.error("Error in status check:", error);
         res.json({ isLiked: false });
       }
     });
@@ -740,34 +821,36 @@ const run = async () => {
     //   }
     // });
 
+    // Submit Report
+
     app.get("/featured-recipes", async (req, res) => {
       console.time("featured-recipes");
 
       try {
         const recipes = await featuredRecipesCollection
           .aggregate([
-            // Latest featured recipes first
             {
               $sort: {
                 featuredAt: -1,
               },
             },
-
-            // Only fetch 4 recipes
             {
               $limit: 4,
             },
 
-            // Convert recipeId (string) to ObjectId
             {
               $addFields: {
                 recipeObjectId: {
-                  $toObjectId: "$recipeId",
+                  $convert: {
+                    input: "$recipeId",
+                    to: "objectId",
+                    onError: null,
+                    onNull: null,
+                  },
                 },
               },
             },
 
-            // Join with all-recipe collection
             {
               $lookup: {
                 from: "all-recipe",
@@ -781,16 +864,28 @@ const run = async () => {
               $unwind: "$recipeDetails",
             },
 
-            // Return only required fields
             {
               $project: {
                 _id: "$recipeDetails._id",
                 recipeId: "$recipeId",
-                title: "$recipeDetails.title",
-                image: "$recipeDetails.image",
+
+                // Name / Title
+                title: "$recipeDetails.recipeName",
+                recipeName: "$recipeDetails.recipeName",
+
+                // Image
+                image: "$recipeDetails.recipeImage",
+                recipeImage: "$recipeDetails.recipeImage",
+
+                // Category & Cuisine
                 category: "$recipeDetails.category",
-                cuisine: "$recipeDetails.cuisine",
-                author: "$recipeDetails.author",
+                cuisine: "$recipeDetails.cuisineType",
+                cuisineType: "$recipeDetails.cuisineType",
+
+                // Author info
+                authorName: "$recipeDetails.authorName",
+                authorEmail: "$recipeDetails.authorEmail",
+
                 featuredAt: 1,
               },
             },
@@ -811,7 +906,7 @@ const run = async () => {
         });
       }
     });
-    // Submit Report
+
     app.post("/reports", async (req, res) => {
       try {
         const { recipeId, userId, userName, userEmail, reason, details } =
