@@ -49,7 +49,7 @@ const run = async () => {
     // get all recipe for everyone
     app.get("/recipes", async (req, res) => {
       try {
-        const limit = Number(req.query.limit) || 10;
+        const limit = Number(req.query.limit) || 12;
         const page = Number(req.query.page) || 1;
 
         const total_data = await allRecipeCollection.countDocuments();
@@ -161,7 +161,8 @@ const run = async () => {
     });
 
     // update recipe
-// Backend: update recipe
+    // update recipe
+
 app.patch("/update-recipe/:id", async (req, res) => {
   try {
     const id = req.params.id;
@@ -824,8 +825,7 @@ app.patch("/update-recipe/:id", async (req, res) => {
     // Submit Report
 
     app.get("/featured-recipes", async (req, res) => {
-      console.time("featured-recipes");
-
+    
       try {
         const recipes = await featuredRecipesCollection
           .aggregate([
@@ -892,12 +892,9 @@ app.patch("/update-recipe/:id", async (req, res) => {
           ])
           .toArray();
 
-        console.timeEnd("featured-recipes");
-
         res.status(200).json(recipes);
       } catch (error) {
         console.error("Featured Recipes Error:", error);
-        console.timeEnd("featured-recipes");
 
         res.status(500).json({
           success: false,
@@ -1048,7 +1045,7 @@ app.patch("/update-recipe/:id", async (req, res) => {
     app.get("/admin/transactions", async (req, res) => {
       try {
         const page = Number(req.query.page) || 1;
-        const limit = Number(req.query.limit) || 10;
+        const limit = Number(req.query.limit) || 9;
         const skip = (page - 1) * limit;
 
         const premiumPayments = await paymentsCollection.find().toArray();
